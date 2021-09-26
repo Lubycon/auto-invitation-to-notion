@@ -8,8 +8,10 @@ authors = ["Martin Hwang"]
 python = "^3.8"
 notion = "^0.0.28"
 pytest = "^6.2.5"
+schema = "^0.7.4"
 
 [tool.poetry.dev-dependencies]
+autopep8 = "^1.5.7"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
