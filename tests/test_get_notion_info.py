@@ -1,5 +1,8 @@
-from typing import Dict
+import logging
 from auto_invitation_to_notion.main import get_notion_users_info
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def test_get_notion_users_info():
@@ -15,5 +18,6 @@ def test_get_notion_users_info():
                                           "authority": Or("lubycon", "mentor", "mentee", "unknown"),
                                           "uid": str}}
                     )
-
-    assert schema.validate(get_notion_users_info(client=client))
+    user_info = get_notion_users_info(client=client)
+    logger.debug(f"user info: {user_info}")
+    assert schema.validate(user_info)
