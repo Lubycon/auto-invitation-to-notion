@@ -45,6 +45,9 @@ def detect_authority(user_info: Dict) -> Dict:
     for user_uid in user_uids:
         user_info[user_uid]["authority"] = "unknown"
 
+        # TODO. 동규님 피드백 (Unresolved)
+        # 앗 요기 코드가 복붙으로 증식하기 좋아보이네요 전역변수에서 loop돌릴 수 있게 해주면 코드가 깔끔해질거같아요.
+        # Refer: https://github.com/Lubycon/auto-invitation-to-notion/pull/1#discussion_r718537759
         page_ids = user_info[user_uid]["guest_page_ids"]
 
         mentee_flag = LUBYCON_HUB_PAGE in page_ids
@@ -53,6 +56,9 @@ def detect_authority(user_info: Dict) -> Dict:
         lubycon_flag = (LUBYCON_HUB_PAGE in page_ids) and (
             LUBYCON_MENTOR_PAGE in page_ids) and (LUBYCON_PRIVATE_PAGE in page_ids)
 
+        # TODO. 동규님 피드백 (Unresolved)
+        # 고정 스트링은 config file로!
+        # Refer: https://github.com/Lubycon/auto-invitation-to-notion/pull/1#discussion_r718538523
         if lubycon_flag:
             user_info[user_uid]["authority"] = "lubycon"
             continue
