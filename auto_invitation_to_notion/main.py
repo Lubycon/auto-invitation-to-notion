@@ -1,5 +1,7 @@
 import requests
 import copy
+import json
+
 from collections import defaultdict
 from typing import List, Dict
 
@@ -11,6 +13,7 @@ LUBYCON_MENTOR_PAGE = '720e43a5-f572-440a-8e58-847b72359b16'
 LUBYCON_HUB_PAGE = 'd3ebe34b-34af-4b2f-b984-ae1e91cff7f3'
 LUBYCON_EMAIL = "lubycon@gmail.com"
 
+LUBYCON_USERS_URL = "https://raw.githubusercontent.com/Lubycon/lubycon-users/main/data/lubyconUsers-v2.json"
 
 def get_lubycon_admin_uid(client: NotionClient) -> str:
     return client.get_email_uid().get(LUBYCON_EMAIL)
@@ -123,3 +126,14 @@ def get_notion_users_info(client: NotionClient):
     user_info = detect_authority(user_info=user_info)
     user_info = change_pk_to_email(user_info=user_info)
     return user_info
+
+if __name__ == "__main__":
+    import os
+    from notion.client import NotionClient
+
+    token_v2 = os.environ.get('NOTION_TOKEN', None)
+    client = NotionClient(token_v2=token_v2)
+
+    lubycon_users_info = requests.get(LUBYCON_USERS_URL).json()
+    print(lubycon_users_info)
+    #user_info = get_notion_users_info(client=client)
