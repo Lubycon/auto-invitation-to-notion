@@ -18,9 +18,11 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 LUBYCON_WORKSPACE = "441e783d-7010-4e27-9202-43be3ecfa332"
+
 LUBYCON_PRIVATE_PAGE = "4594ead1-b975-451d-a578-2ffeea6aa452"
 LUBYCON_MENTOR_PAGE = "720e43a5-f572-440a-8e58-847b72359b16"
 LUBYCON_HUB_PAGE = "d3ebe34b-34af-4b2f-b984-ae1e91cff7f3"
+
 LUBYCON_EMAIL = "lubycon@gmail.com"
 AUTHORITY = ["admin", "mentor", "mentee", "guest"]
 
@@ -32,19 +34,23 @@ def get_lubycon_admin_uid(client: NotionClient) -> str:
 
 
 def get_workspace_id(client: NotionClient, admin_uid: str) -> str:
+    logger.info(f"getting workspace id")
     response = client.post("getSpaces", {})
     response.raise_for_status()
 
     workspace_id = list(response.json()[admin_uid]["space"].keys())[-1]
+    logger.info(f"Finished workspace id")
+    logger.info(f"===============================\n")
     return workspace_id
 
 
 def get_uid_pageids_assigned_users(client: NotionClient, workspace_id: str) -> Dict:
+    logger.info(f"getting user's uid and page ids assigned to notion")
     response = client.post(
         "getSubscriptionData", {"spaceId": workspace_id, "version": "v2"}
     )
     response.raise_for_status()
-
+    logger.info(f"reponse of getSubscriptionData - {response.json()}")
     users_info = response.json()["users"]
 
     uid_pageids_info = {}
@@ -53,10 +59,13 @@ def get_uid_pageids_assigned_users(client: NotionClient, workspace_id: str) -> D
             "guest_page_ids": user_info.get("guestPageIds") or []
         }
 
+    logger.info(f"Finished getting user's uid and page ids assigned to notion")
+    logger.info(f"===============================\n")
     return uid_pageids_info
 
 
 def detect_authority(user_info: Dict) -> Dict:
+    logger.info(f"Detecting user authority")
     user_info = copy.deepcopy(user_info)
     user_uids = user_info.keys()
     for user_uid in user_uids:
@@ -91,11 +100,13 @@ def detect_authority(user_info: Dict) -> Dict:
         if mentee_flag:
             user_info[user_uid]["authority"] = "mentee"
             continue
-
+    logger.info(f"Finished getting user authority")
+    logger.info(f"===============================\n")
     return user_info
 
 
 def get_email_name_assigned_users(client: NotionClient, user_uid_pageids: List[str]):
+    logger.info(f"Get user's email and name from notion")
     payload = [
         {"pointer": {"table": "notion_user", "id": user_uid}, "version": -1}
         for user_uid in list(user_uid_pageids.keys())
@@ -103,6 +114,7 @@ def get_email_name_assigned_users(client: NotionClient, user_uid_pageids: List[s
 
     response = client.post("syncRecordValues", {"requests": payload})
     response.raise_for_status()
+    logger.info(f"response of syncRecordValues - {response.json()}")
 
     notion_user = response.json()["recordMap"]["notion_user"]
 
@@ -110,6 +122,9 @@ def get_email_name_assigned_users(client: NotionClient, user_uid_pageids: List[s
     for user_uid in notion_user:
         v = notion_user[user_uid]["value"]
         user_info[user_uid] = {"email": v["email"], "name": v["name"]}
+
+    logger.info(f"Finished getting user's email and name from notion")
+    logger.info(f"===============================\n")
     return user_info
 
 
@@ -132,16 +147,19 @@ def change_pk_to_email(user_info: Dict):
 
 
 def get_notion_users_info(client: NotionClient):
+    logger.info(f">>> Get notion user info")
     admin_uid = get_lubycon_admin_uid(client=client)
     workspace_uid = get_workspace_id(client=client, admin_uid=admin_uid)
-    logging.info(f"workspace id: {workspace_uid}")
+    logger.info(f">>> workspace id: {workspace_uid}")
 
     user_uid_pageids = get_uid_pageids_assigned_users(
         client=client, workspace_id=workspace_uid
     )
+    logger.info(f">>> user_uid_pageids: {user_uid_pageids}\n")
     user_email_name = get_email_name_assigned_users(
         client=client, user_uid_pageids=user_uid_pageids
     )
+    logger.info(f">>> user_email_name: {user_email_name}\n")
 
     user_info = defaultdict(dict)
     for user_uid in user_uid_pageids:
@@ -152,30 +170,27 @@ def get_notion_users_info(client: NotionClient):
 
     user_info = detect_authority(user_info=user_info)
     user_info = change_pk_to_email(user_info=user_info)
+    logger.info(f">>> Finished getting notion user info")
+    logger.info(f"===============================\n")
     return user_info
 
 
 def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_id: str):
+    logger.info(f">>> Invite User - {email}")
     default_permission = "read_and_write"
 
     finduser_payload = {"email": email}
     response = client.post("findUser", finduser_payload)
-    logger.info(">>> request findUser")
     response.raise_for_status()
 
     finduser_res = response.json()
-    logger.info(f"findUser response: {finduser_res}")
+    logger.info(f">>> response of findUser: {finduser_res}")
 
     new_user_version: int = finduser_res.get("value").get("value").get("version")
     new_user_id: str = finduser_res.get("value").get("value").get("id")
-    new_user_role: str = finduser_res.get("value").get("role")
-    logger.info(f"new user id: {new_user_id}")
-    logger.info(f"new user id: {new_user_version}")
-    logger.info(f"new user id: {new_user_role}")
 
     if new_user_version == 1:  # 기존 Notion User가 아닌 경우
-        logger.info(">>> Not notion user")
-
+        logger.info(f">>> Not notion user")
         createemailuser_payload = {
             "email": email,
             "preferredLocaleOrigin": "inferred_from_inviter",
@@ -184,7 +199,6 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
         }
 
         response = client.post("createEmailUser", createemailuser_payload)
-        logger.info(">>> request createEmailUser")
         response.raise_for_status()
         logger.info(f">>> response of createEmailUser: {response.json()}")
 
@@ -214,12 +228,11 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
             ],
         }
         response = client.post("saveTransactions", savetransactions_payload)
-        logger.info(">>> request saveTransactions")
         response.raise_for_status()
         logger.info(f">>> response of saveTransactions: {response.json()}")
 
     elif new_user_version == 4:  # 기존 Notion User
-        logger.info(">>> Notion user")
+        logger.info(f">>> notion user")
         syncrecordvalues_payload = {
             "requests": [
                 {
@@ -232,7 +245,6 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
             ]
         }
         response = client.post("syncRecordValues", syncrecordvalues_payload)
-        logger.info(">>> request syncRecordValues")
         response.raise_for_status()
         logger.info(f">>> response of syncRecordValues: {response.json()}")
 
@@ -272,14 +284,14 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
             ],
         }
         response = client.post("saveTransactions", savetransactions_payload)
-        logger.info(">>> request saveTransactions")
         response.raise_for_status()
         logger.info(f">>> response of saveTransactions: {response.json()}")
 
     else:
         raise Exception("Error in invitation Method. can't recognize user type")
 
-    logger.info(f">>> Finished invitation - {email}")
+    logger.info(f">>> Finished invite user - {email}")
+    logger.info(f"===============================\n")
 
 
 def change_authority(
@@ -289,7 +301,7 @@ def change_authority(
     editor / read_and_write / comment_only/ reader 중에서 변경하고 싶은 것인데,
     실은 일괄되게 `read_and_write` 권한으로 어느 page_id을 볼 수 있게 해주는 것이 우리의 permission의 본질이지 않을까?
     """
-    default_permission = "read_and_write"
+    logger.info(f">>> Change authority")
     savetransactions_payload = {
         "requestId": str(uuid.uuid4()),
         "transactions": [
@@ -326,13 +338,25 @@ def change_authority(
         ],
     }
     response = client.post("saveTransactions", savetransactions_payload)
-    logger.info(">>> request saveTransactions")
     response.raise_for_status()
     logger.info(f">>> response of saveTransactions: {response.json()}")
+    logger.info(f">>> Finished change authority")
+    logger.info(f"===============================\n")
 
 
-def remove_to_notion():
-    pass
+def remove_from_notion(client: NotionClient, user_id: str, workspace_id: str):
+    logger.info(f">>> Remove user from notion")
+    remove_users_from_space_payload = {
+        "userIds": [user_id],
+        "spaceId": workspace_id,
+        "removePagePermissions": True,
+        "revokeUserTokens": False,
+    }
+    response = client.post("removeUsersFromSpace", remove_users_from_space_payload)
+    logger.info(f">>> request removeUsersFromSpace: {response.json()}")
+    response.raise_for_status()
+    logger.info(f">>> Finished remove user from notion: {user_id}")
+    logger.info(f"===============================\n")
 
 
 if __name__ == "__main__":
@@ -344,7 +368,7 @@ if __name__ == "__main__":
 
     lubycon_users_info = requests.get(LUBYCON_USERS_URL).json()
     notion_user_info = get_notion_users_info(client=client)
-
+    logging.info(f">>> Notion user info : {notion_user_info}\n")
     invitation_list = []
     authority_change_list = []
     remove_list = list(notion_user_info.keys())
@@ -373,9 +397,9 @@ if __name__ == "__main__":
         if not lubycon_user_is_activate:
             remove_list.pop(remove_list.index(lubycon_user_email))
 
-    logger.info(f"Invitation list: {invitation_list}\n")
-    logger.info(f"Authorith change list: {authority_change_list}\n")
-    logger.info(f"Remove list: {remove_list}\n")
+    logger.info(f">>> Invitation list: {invitation_list}\n")
+    logger.info(f">>> Authorith change list: {authority_change_list}\n")
+    logger.info(f">>> Remove list: {remove_list}\n")
 
     invite_to_notion(
         client=client,
@@ -390,4 +414,10 @@ if __name__ == "__main__":
         to="reader",  # editor / read_and_write / comment_only/ reader
         workspace_id=LUBYCON_WORKSPACE,
         page_id=LUBYCON_HUB_PAGE,
+    )
+
+    remove_from_notion(
+        client=client,
+        user_id="[user_id]",
+        workspace_id=LUBYCON_WORKSPACE,
     )
