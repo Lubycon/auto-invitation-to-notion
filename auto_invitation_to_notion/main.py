@@ -19,12 +19,13 @@ logger = logging.getLogger()
 
 LUBYCON_WORKSPACE = "441e783d-7010-4e27-9202-43be3ecfa332"
 
+LUBYCON_ALL = "72a5f0ad-ccbc-4a2e-a7ca-a2106bea3326"
 LUBYCON_PRIVATE_PAGE = "4594ead1-b975-451d-a578-2ffeea6aa452"
-LUBYCON_MENTOR_PAGE = "720e43a5-f572-440a-8e58-847b72359b16"
-LUBYCON_HUB_PAGE = "d3ebe34b-34af-4b2f-b984-ae1e91cff7f3"
+LUBYCON_MATE_PAGE = "720e43a5-f572-440a-8e58-847b72359b16"
+LUBYCON_SANDBOX_PAGE = "d3ebe34b-34af-4b2f-b984-ae1e91cff7f3"
 
 LUBYCON_EMAIL = "lubycon@gmail.com"
-AUTHORITY = ["admin", "mentor", "mentee", "guest"]
+AUTHORITY = ["admin", "mate", "member"]
 
 LUBYCON_USERS_URL = "https://raw.githubusercontent.com/Lubycon/lubycon-users/main/data/lubyconUsers-v2.json"
 
@@ -76,29 +77,23 @@ def detect_authority(user_info: Dict) -> Dict:
         # Refer: https://github.com/Lubycon/auto-invitation-to-notion/pull/1#discussion_r718537759
         page_ids = user_info[user_uid]["guest_page_ids"]
 
-        mentee_flag = LUBYCON_HUB_PAGE in page_ids
-        mentor_flag = (LUBYCON_HUB_PAGE in page_ids) and (
-            LUBYCON_MENTOR_PAGE in page_ids
-        )
-        lubycon_flag = (
-            (LUBYCON_HUB_PAGE in page_ids)
-            and (LUBYCON_MENTOR_PAGE in page_ids)
-            and (LUBYCON_PRIVATE_PAGE in page_ids)
-        )
+        member_flag = page_ids == [LUBYCON_SANDBOX_PAGE]
+        mate_flag = set(page_ids) == {LUBYCON_SANDBOX_PAGE, LUBYCON_MATE_PAGE}
+        admin_flag = set(page_ids) == {LUBYCON_ALL}
 
         # TODO. 동규님 피드백 (Unresolved)
         # 고정 스트링은 config file로!
         # Refer: https://github.com/Lubycon/auto-invitation-to-notion/pull/1#discussion_r718538523
-        if lubycon_flag:
-            user_info[user_uid]["authority"] = "lubycon"
+        if admin_flag:
+            user_info[user_uid]["authority"] = "admin"
             continue
 
-        if mentor_flag:
-            user_info[user_uid]["authority"] = "mentor"
+        if mate_flag:
+            user_info[user_uid]["authority"] = "mate"
             continue
 
-        if mentee_flag:
-            user_info[user_uid]["authority"] = "mentee"
+        if member_flag:
+            user_info[user_uid]["authority"] = "member"
             continue
     logger.info(f"Finished getting user authority")
     logger.info(f"===============================\n")
@@ -186,10 +181,10 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
     finduser_res = response.json()
     logger.info(f">>> response of findUser: {finduser_res}")
 
-    new_user_version: int = finduser_res.get("value").get("value").get("version")
+    given_name: int = finduser_res.get("value").get("value").get("given_name")
     new_user_id: str = finduser_res.get("value").get("value").get("id")
 
-    if new_user_version == 1:  # 기존 Notion User가 아닌 경우
+    if not given_name:  # 기존 Notion User가 아닌 경우
         logger.info(f">>> Not notion user")
         createemailuser_payload = {
             "email": email,
@@ -231,7 +226,7 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
         response.raise_for_status()
         logger.info(f">>> response of saveTransactions: {response.json()}")
 
-    elif new_user_version == 4:  # 기존 Notion User
+    elif given_name:  # 기존 Notion User
         logger.info(f">>> notion user")
         syncrecordvalues_payload = {
             "requests": [
@@ -294,7 +289,7 @@ def invite_to_notion(client: NotionClient, email: str, workspace_id: str, page_i
     logger.info(f"===============================\n")
 
 
-def change_authority(
+def change_permission(
     client: NotionClient, user_id: str, to: str, workspace_id: str, page_id: str
 ):
     """
@@ -359,6 +354,30 @@ def remove_from_notion(client: NotionClient, user_id: str, workspace_id: str):
     logger.info(f"===============================\n")
 
 
+def change_authority(
+    client: NotionClient, email: str, user_id: str, workspace_id: str, authority: str
+):
+    remove_from_notion(client=client, user_id=user_id, workspace_id=workspace_id)
+
+    page_ids = []
+    if authority == "admin":
+        page_ids = [LUBYCON_ALL]
+    elif authority == "mate":
+        page_ids = [LUBYCON_MATE_PAGE, LUBYCON_SANDBOX_PAGE]
+    elif authority == "member":
+        page_ids = [LUBYCON_SANDBOX_PAGE]
+    else:
+        logger.error(">>> Wrong Authority")
+
+    for page_id in page_ids:
+        invite_to_notion(
+            client=client,
+            email=email,
+            workspace_id=LUBYCON_WORKSPACE,
+            page_id=page_id,
+        )
+
+
 if __name__ == "__main__":
     import os
     from notion.client import NotionClient
@@ -371,7 +390,7 @@ if __name__ == "__main__":
     logging.info(f">>> Notion user info : {notion_user_info}\n")
     invitation_list = []
     authority_change_list = []
-    remove_list = list(notion_user_info.keys())
+    remove_email_list = list(notion_user_info.keys())
     for lubycon_user in lubycon_users_info:
         lubycon_user_email = lubycon_user.get("notion_email")
         lubycon_user_authority = lubycon_user.get("authority")
@@ -379,7 +398,14 @@ if __name__ == "__main__":
 
         notion_user = notion_user_info.get(lubycon_user_email)
         if not notion_user:  # Lubycon원장에는 있지만, Notion에 등록되어있지 않은 경우
-            invitation_list.append(lubycon_user_email)
+            if lubycon_user_is_activate:
+                invitation_list.append(
+                    {
+                        "email": lubycon_user_email,
+                        "authority": lubycon_user_authority,
+                        "activate": lubycon_user_is_activate,
+                    }
+                )
             continue
 
         if (
@@ -388,36 +414,74 @@ if __name__ == "__main__":
             authority_change_list.append(
                 {
                     "email": lubycon_user_email,
-                    "authority": lubycon_user_authority,
                     "uid": notion_user.get("uid"),
+                    "current": notion_user.get("authority"),
+                    "to": lubycon_user_authority,
                 }
             )
 
-        remove_list.pop(remove_list.index(lubycon_user_email))
+        remove_email_list.pop(remove_email_list.index(lubycon_user_email))
         if not lubycon_user_is_activate:
-            remove_list.pop(remove_list.index(lubycon_user_email))
+            if lubycon_user_email in remove_email_list:
+                remove_email_list.pop(remove_email_list.index(lubycon_user_email))
 
+    remove_user_list = []
+    for remove_user_email in remove_email_list:
+        remove_user_list.append(
+            {
+                "email": remove_user_email,
+                "uid": notion_user_info.get(remove_user_email).get("uid"),
+                "name": notion_user_info.get(remove_user_email).get("name"),
+            }
+        )
     logger.info(f">>> Invitation list: {invitation_list}\n")
     logger.info(f">>> Authorith change list: {authority_change_list}\n")
-    logger.info(f">>> Remove list: {remove_list}\n")
+    logger.info(f">>> Remove list: {remove_user_list}\n")
 
-    invite_to_notion(
-        client=client,
-        email="[email]",
-        workspace_id=LUBYCON_WORKSPACE,
-        page_id=LUBYCON_HUB_PAGE,
-    )
+    # Invite
+    for invite_user in invitation_list:
+        email = invite_user.get("email")
+        authority = invite_user.get("authority")
+        is_activate = invite_user.get("activate")
 
-    change_authority(
-        client=client,
-        user_id="[user_id]",
-        to="reader",  # editor / read_and_write / comment_only/ reader
-        workspace_id=LUBYCON_WORKSPACE,
-        page_id=LUBYCON_HUB_PAGE,
-    )
+        if not is_activate:
+            continue
 
-    remove_from_notion(
-        client=client,
-        user_id="[user_id]",
-        workspace_id=LUBYCON_WORKSPACE,
-    )
+        page_ids = []
+        if authority == "admin":
+            page_ids = [LUBYCON_ALL]
+
+        elif authority == "mate":
+            page_ids = [LUBYCON_MATE_PAGE, LUBYCON_SANDBOX_PAGE]
+
+        elif authority == "member":
+            page_ids = [LUBYCON_SANDBOX_PAGE]
+
+        for page_id in page_ids:
+            invite_to_notion(
+                client=client,
+                email=email,
+                workspace_id=LUBYCON_WORKSPACE,
+                page_id=page_id,
+            )
+
+    for authority_changed_user in authority_change_list:
+        email = authority_changed_user.get("email")
+        authority = authority_changed_user.get("to")
+        user_id = authority_changed_user.get("uid")
+        workspace_id = LUBYCON_WORKSPACE
+
+        change_authority(
+            client=client,
+            email=email,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            authority=authority,
+        )
+
+    for remove_user in remove_user_list:
+        remove_from_notion(
+            client=client,
+            user_id=remove_user.get("uid"),
+            workspace_id=LUBYCON_WORKSPACE,
+        )
