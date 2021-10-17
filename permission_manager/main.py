@@ -114,9 +114,11 @@ def get_email_name_assigned_users(client: NotionClient, user_uid_pageids: List[s
     notion_user = response.json()["recordMap"]["notion_user"]
 
     user_info = {}
+    logger.info("notion_user: {notion_user}")
+
     for user_uid in notion_user:
-        v = notion_user[user_uid]["value"]
-        user_info[user_uid] = {"email": v["email"], "name": v["name"]}
+        v = notion_user.get(user_uid).get("value")
+        user_info[user_uid] = {"email": v.get("email"), "name": v.get("name")}
 
     logger.info(f"Finished getting user's email and name from notion")
     logger.info(f"===============================\n")
@@ -382,10 +384,18 @@ if __name__ == "__main__":
     import os
     from notion.client import NotionClient
 
-    token_v2 = os.environ.get("NOTION_TOKEN", None)
-    client = NotionClient(token_v2=token_v2)
+    notion_token = os.environ.get("NOTION_TOKEN", None)
+    github_token = os.environ.get("LUBYCON_GITHUB_TOKEN", None)
+    client = NotionClient(token_v2=notion_token)
 
-    lubycon_users_info = requests.get(LUBYCON_USERS_URL).json()
+    header = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3.raw",
+    }
+    response = requests.get(LUBYCON_USERS_URL, headers=header)
+    response.raise_for_status()
+    lubycon_users_info = response.json()
+
     notion_user_info = get_notion_users_info(client=client)
     logging.info(f">>> Notion user info : {notion_user_info}\n")
     invitation_list = []
